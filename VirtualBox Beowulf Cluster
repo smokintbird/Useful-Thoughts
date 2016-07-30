@@ -1,0 +1,154 @@
+##### Beowulf Cluster System Setup #####
+## This setup makes use of a large box of 4GB flash drives and a whole campus's worth of desktop PCs.  
+## I was able to comandere most of the college's workstations and make them work together for a common goal.
+## Unfortunately I did not save my compatriates portion that compiled the program and set the system in motion.
+
+##### Virtual Box Vware #####
+-2GB RAM
+-2 Processors per VM
+-3.7GB Hard Drive (4GB USB Flash Drive)
+-Bridged Network Adapter
+-DHCP provided for IPv.4 Network (not used, but available)
+
+##### Start here for ALL machines #####
+-Install CentOS 6 - Minimal Install
+-Boot from CD to install
+	##username=password
+	root=Beowulf4U2
+
+##### General configuration #####
+-login as root
+-vi /etc/sysconfig/network-scripts/ifcfg-eth0 ##Start Internet
+	change NM_CONTROLLED to NM_CONTROLLED="no"
+	change ONBOOT to ONBOOT="yes"
+	change BOOTPROTO to BOOTPROTO="DHCP"
+	save and exit (using <esc> :wq)
+-vi /etc/sysconfig/selinux
+	change to SELINUX=disabled
+	save and exit
+-useradd mpiuser
+-passwd mpiuser
+  ##username=password
+	mpiuser=mpiuserpassword
+-shutdown -r now
+-login as root
+-yum update
+-yum install openmpi
+-shutdown -r now
+	
+##### For the Master Node #####
+-login as root
+-yum install nfs-utils rpcbind system-config-firewall-tui
+-setenforce 0
+-chkconfig nfs on
+-chkconfig nfslock on
+-chkconfig rpcbind on
+-system-config-firewall-tui
+	include "NFS4" in the trusted services list
+-vi /etc/fstab
+	add "192.168.1.110:/home/mpiuser /home/mpiuser nfs4 defaults 1 1"
+	save and exit
+-vi /etc/exports
+	add "/home/mpiuser 192.168.1.110/255.255.255.0(rw,sync,no_root_squash)
+	save and exit
+-vi /etc/hosts.allow
+	add "mountd: 192.168.1.110/255.255.255.0"
+	save and exit
+-vi /etc/hosts.deny
+	add the following lines
+		portmap:ALL
+		lockd:ALL
+		mountd:ALL
+		rquotad:ALL
+		statd:ALL
+	save and exit
+-vi /etc/hosts
+	add or change to match the following lines
+		127.0.0.1 localhost
+		192.168.1.110 mpiuser110
+		192.168.1.111 mpiuser111
+		192.168.1.112 mpiuser112
+		192.168.1.113 mpiuser113
+		192.168.1.114 mpiuser114
+		  ...etc...
+	save and exit
+-vi /etc/ssh/sshd_config
+	add or change to match the following lines
+		StrictModes no
+		RSAAuthentication yes
+		PubkeyAuthentication yes
+		AuthorizedKeysFile %h/.ssh/authorized_keys
+		UsePAM no
+	save and exit
+-service rpcbind restart
+-service nfs restart
+-service nfslock restart
+-logout with exit
+-login as mpiuser
+-ssh-keygen -t dsa ##use no password
+-logout with exit
+-login as root
+-cp /home/mpiuser/.ssh/id_dsa.pub /home/mpiuser/.ssh/authorized_keys
+-cp /etc/ssh/sshd_config /home/mpiuser/sshd_config
+-chmod 700 /home/mpiuser/.ssh
+-chmod 600 /home/mpiuser/.ssh/authorized_keys
+-shutdown -r now
+
+##### For the Slave Nodes #####
+-yum install nfs-utils rpcbind
+-setenforce 0
+-chkconfig nfs on
+-chkconfig nfslock on
+-chkconfig rpcbind on
+-service rpcbind restart
+-service nfs restart
+-service nfslock restart
+-vi /etc/fstab
+	add "192.168.1.110:/home/mpiuser /home/mpiuser nfs4 defaults 1 1"
+	save and exit
+-shutdown -r now
+
+##### Continue for each machine replacing end numbers with node number #####
+-login as root
+-vi /etc/sysconfig/network-scripts/ifcfg-eth0 
+	change NM_CONTROLLED to NM_CONTROLLED="no"
+	change ONBOOT to ONBOOT="yes"
+	change BOOTPROTO to BOOTPROTO="none"
+	add "IPADDR=192.168.1.xxx" xx=110-114
+	add "NETMASK=255.255.255.0"
+	add "GATEWAY=192.168.1.1"
+	save and exit (using <esc> :wq)
+-touch /home/mpiuser/testfile1
+-ls /home/mpiuser ##If you see the files created on each of the machines mirrored onto each of the other machines, 
+                  ##it proves that your network addressing is correct and the NFS4 share is setup /home/mpiuser and working correctly.
+
+##### Continue for each machine #####
+-vi /etc/sysconfig/network
+	add or change to match the following lines
+		NETWORKING=yes
+		NETWORKING_IPV6=no
+		HOSTNAME=mpiuser110  (number matcher last octet of IP address)
+	save and exit
+-vi /home/mpiuser/.mpi_hostfile
+	add or change to match the following lines
+		mpiuser110 slots=2 ## means 2 processors available
+		mpiuser111 slots=2
+		mpiuser112slots=2
+		mpiuser113slots=2
+		mpiuser114slots=2
+		  ...etc...
+	save and exit
+-cp /home/mpiuser/sshd_config /etc/ssh/sshd_config ##overwrite yes
+
+##### Cleanup #####
+-login as root
+-rm /home/mpiuser/test*
+-rm /home/mpiuser/sshd_config
+logout with exit
+
+##### Compiling programs #####
+mpicc yourprogram.c
+
+##### Running programs on the cluster #####
+	   #ofprocesses
+mpirun -np 10 --hostfile .mpi_hostfile ./yourprogram.out
